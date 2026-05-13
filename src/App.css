@@ -249,6 +249,42 @@ header p {
   color: #fff;
 }
 
+.day-cell {
+  position: relative;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.day-number {
+  line-height: 1;
+}
+
+.holiday-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #ef4444;
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.holiday-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.holiday-chip {
+  font-size: 12px;
+  color: #991b1b;
+  background: #fee2e2;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
 @media (max-width: 640px) {
   .container {
     padding: 16px 12px;

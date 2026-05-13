@@ -342,9 +342,23 @@ function MonthCalendar({
     return map
   }, [monthStart])
 
+  const holidaysInMonth = useMemo(() => {
+    const monthEnd = endOfMonth(monthStart)
+    return between(monthStart, monthEnd)
+  }, [monthStart])
+
   return (
     <div className="month">
       <h3>{format(monthStart, 'yyyy年M月')}</h3>
+      {holidaysInMonth.length > 0 && (
+        <div className="holiday-list">
+          {holidaysInMonth.map((h) => (
+            <span key={format(h.date, 'yyyy-MM-dd')} className="holiday-chip">
+              {format(h.date, 'M/d')} {h.name}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="calendar-grid">
         {['日', '月', '火', '水', '木', '金', '土'].map((d) => (
           <div key={d} className="weekday-header">
@@ -379,10 +393,10 @@ function MonthCalendar({
                 .filter(Boolean)
                 .join(' ')}
               disabled={!inRange}
-              title={holidayName}
               onClick={() => onToggle(str)}
             >
-              {format(d, 'd')}
+              <span className="day-number">{format(d, 'd')}</span>
+              {holiday && <span className="holiday-badge">祝</span>}
             </button>
           )
         })}
