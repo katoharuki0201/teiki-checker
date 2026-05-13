@@ -58,6 +58,14 @@ header p {
   background: #fff;
 }
 
+.form-grid select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
 .result {
   background: #fff;
   border: 1px solid #e5e7eb;
@@ -195,7 +203,7 @@ header p {
 }
 
 .day-cell:hover:not(:disabled) {
-  background: #f3f4f6;
+  opacity: 0.7;
 }
 
 .day-cell.selected {
@@ -224,6 +232,20 @@ header p {
 
 .day-cell.selected.sunday,
 .day-cell.selected.saturday {
+  color: #fff;
+}
+
+.day-cell.empty {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.day-cell.holiday {
+  color: #ef4444;
+}
+
+.day-cell.selected.holiday {
   color: #fff;
 }
 
