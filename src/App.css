@@ -203,11 +203,7 @@ header p {
 }
 
 .day-cell:hover:not(:disabled) {
-<<<<<<< HEAD
-  opacity: 0.7;
-=======
   opacity: 0.85;
->>>>>>> 4a83a9d (fix: hover opacity)
 }
 
 .day-cell.selected {
