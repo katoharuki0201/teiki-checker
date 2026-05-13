@@ -13,6 +13,7 @@ import {
   getDay,
   parseISO,
 } from 'date-fns'
+import { isHoliday } from '@holiday-jp/holiday_jp'
 import './App.css'
 
 type PeriodType = 1 | 3 | 6
@@ -89,6 +90,8 @@ function formatCurrency(n: number): string {
 export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [attendance, setAttendance] = useState<Set<string>>(loadAttendance)
+  const [oneWayFareInput, setOneWayFareInput] = useState(String(settings.oneWayFare))
+  const [passPriceInput, setPassPriceInput] = useState(String(settings.passPrice))
 
   const start = useMemo(() => parseISO(settings.startDate), [settings.startDate])
   const end = useMemo(
@@ -167,23 +170,33 @@ export default function App() {
           <label>
             片道運賃（円）
             <input
-              type="number"
-              min={0}
-              value={settings.oneWayFare}
-              onChange={(e) =>
-                updateSettings({ oneWayFare: Number(e.target.value) })
-              }
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={oneWayFareInput}
+              onChange={(e) => {
+                const filtered = e.target.value.replace(/[^0-9]/g, '')
+                setOneWayFareInput(filtered)
+              }}
+              onBlur={() => {
+                updateSettings({ oneWayFare: oneWayFareInput === '' ? 0 : Number(oneWayFareInput) })
+              }}
             />
           </label>
           <label>
             定期代（円）
             <input
-              type="number"
-              min={0}
-              value={settings.passPrice}
-              onChange={(e) =>
-                updateSettings({ passPrice: Number(e.target.value) })
-              }
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={passPriceInput}
+              onChange={(e) => {
+                const filtered = e.target.value.replace(/[^0-9]/g, '')
+                setPassPriceInput(filtered)
+              }}
+              onBlur={() => {
+                updateSettings({ passPrice: passPriceInput === '' ? 0 : Number(passPriceInput) })
+              }}
             />
           </label>
           <label>
@@ -317,6 +330,11 @@ function MonthCalendar({
           const isCurrentMonth = isSameMonth(d, monthStart)
           const selected = attendance.has(str)
           const day = getDay(d)
+          const holiday = isCurrentMonth && isHoliday(d)
+
+          if (!isCurrentMonth) {
+            return <div key={str} className="day-cell empty" />
+          }
 
           return (
             <button
@@ -324,11 +342,11 @@ function MonthCalendar({
               type="button"
               className={[
                 'day-cell',
-                !isCurrentMonth && 'other-month',
                 !inRange && 'out-of-range',
                 selected && 'selected',
                 day === 0 && 'sunday',
                 day === 6 && 'saturday',
+                holiday && 'holiday',
               ]
                 .filter(Boolean)
                 .join(' ')}
