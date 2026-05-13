@@ -13,7 +13,7 @@ import {
   getDay,
   parseISO,
 } from 'date-fns'
-import { isHoliday } from '@holiday-jp/holiday_jp'
+import { isHoliday, between } from '@holiday-jp/holiday_jp'
 import './App.css'
 
 type PeriodType = 1 | 3 | 6
@@ -122,6 +122,23 @@ export default function App() {
       saveSettings(updated)
       return updated
     })
+
+    // Filter out attendance dates that fall outside the new range
+    const nextSettings = { ...settings, ...next }
+    const newStart = parseISO(nextSettings.startDate)
+    const newEnd = getEndDate(newStart, nextSettings.periodType)
+    setAttendance((prev) => {
+      const filtered = new Set(
+        [...prev].filter((dateStr) => {
+          const d = parseISO(dateStr)
+          return isWithinInterval(d, { start: newStart, end: newEnd })
+        })
+      )
+      if (filtered.size !== prev.size) {
+        saveAttendance(filtered)
+      }
+      return filtered
+    })
   }
 
   function toggleDate(dateStr: string) {
@@ -142,7 +159,7 @@ export default function App() {
     const next = new Set<string>()
     for (const d of days) {
       const day = getDay(d)
-      if (day !== 0 && day !== 6) {
+      if (day !== 0 && day !== 6 && !isHoliday(d)) {
         next.add(format(d, 'yyyy-MM-dd'))
       }
     }
@@ -315,9 +332,33 @@ function MonthCalendar({
   })
   const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd })
 
+  const holidayMap = useMemo(() => {
+    const map = new Map<string, string>()
+    const monthEnd = endOfMonth(monthStart)
+    const holidays = between(monthStart, monthEnd)
+    for (const h of holidays) {
+      map.set(format(h.date, 'yyyy-MM-dd'), h.name)
+    }
+    return map
+  }, [monthStart])
+
+  const holidaysInMonth = useMemo(() => {
+    const monthEnd = endOfMonth(monthStart)
+    return between(monthStart, monthEnd)
+  }, [monthStart])
+
   return (
     <div className="month">
       <h3>{format(monthStart, 'yyyy年M月')}</h3>
+      {holidaysInMonth.length > 0 && (
+        <div className="holiday-list">
+          {holidaysInMonth.map((h) => (
+            <span key={format(h.date, 'yyyy-MM-dd')} className="holiday-chip">
+              {format(h.date, 'M/d')} {h.name}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="calendar-grid">
         {['日', '月', '火', '水', '木', '金', '土'].map((d) => (
           <div key={d} className="weekday-header">
@@ -330,7 +371,8 @@ function MonthCalendar({
           const isCurrentMonth = isSameMonth(d, monthStart)
           const selected = attendance.has(str)
           const day = getDay(d)
-          const holiday = isCurrentMonth && isHoliday(d)
+          const holidayName = holidayMap.get(str)
+          const holiday = holidayName !== undefined
 
           if (!isCurrentMonth) {
             return <div key={str} className="day-cell empty" />
@@ -353,7 +395,8 @@ function MonthCalendar({
               disabled={!inRange}
               onClick={() => onToggle(str)}
             >
-              {format(d, 'd')}
+              <span className="day-number">{format(d, 'd')}</span>
+              {holiday && <span className="holiday-badge">祝</span>}
             </button>
           )
         })}
