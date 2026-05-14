@@ -268,10 +268,14 @@ export default function App() {
   }
 
   function addProfile() {
+    const today = new Date()
     const newProfile: Profile = {
-      ...activeProfile,
       id: generateId(),
       name: `設定${profiles.length + 1}`,
+      oneWayFare: 300,
+      passPrice: 12000,
+      periodType: 1,
+      startDate: format(today, 'yyyy-MM-dd'),
     }
     const updated = [...profiles, newProfile]
     setProfiles(updated)
