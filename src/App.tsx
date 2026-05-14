@@ -477,13 +477,7 @@ export default function App() {
         </p>
       </header>
 
-      {/* Desktop settings */}
-      <section className="settings desktop-only">
-        <h2>設定</h2>
-        {settingsForm}
-      </section>
-
-      {/* Mobile summary */}
+      {/* Settings summary */}
       <div className="settings-summary sp-only">
         <div className="summary-row">
           <span className="summary-profile">{activeProfile.name}</span>
