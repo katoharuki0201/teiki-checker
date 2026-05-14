@@ -283,6 +283,8 @@ export default function App() {
     switchProfile(newProfile.id)
     setAttendance(new Set())
     saveAttendance(newProfile.id, new Set())
+    setOneWayFareInput(String(newProfile.oneWayFare))
+    setPassPriceInput(String(newProfile.passPrice))
   }
 
   function deleteProfile(id: string) {
