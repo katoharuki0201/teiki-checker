@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import {
   format,
   addMonths,
@@ -187,6 +187,18 @@ export default function App() {
   )
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    if (isSettingsOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [isSettingsOpen])
 
   const start = useMemo(
     () => parseISO(activeProfile.startDate),
@@ -332,6 +344,124 @@ export default function App() {
     saveAttendance(activeId, new Set())
   }
 
+  const settingsForm = (
+    <>
+      <div className="profile-bar">
+        {renamingId === activeId ? (
+          <div className="profile-rename">
+            <input
+              type="text"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={confirmRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmRename()
+                if (e.key === 'Escape') setRenamingId(null)
+              }}
+              autoFocus
+            />
+          </div>
+        ) : (
+          <select
+            className="profile-select"
+            value={activeId}
+            onChange={(e) => switchProfile(e.target.value)}
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <div className="profile-actions">
+          <button
+            type="button"
+            onClick={() => startRename(activeId, activeProfile.name)}
+          >
+            名前変更
+          </button>
+          <button type="button" onClick={addProfile}>
+            追加
+          </button>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => deleteProfile(activeId)}
+            disabled={profiles.length <= 1}
+          >
+            削除
+          </button>
+        </div>
+      </div>
+
+      <div className="form-grid">
+        <label>
+          片道運賃（円）
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={oneWayFareInput}
+            onChange={(e) => {
+              const filtered = e.target.value.replace(/[^0-9]/g, '')
+              setOneWayFareInput(filtered)
+            }}
+            onBlur={() => {
+              updateProfile({
+                oneWayFare:
+                  oneWayFareInput === '' ? 0 : Number(oneWayFareInput),
+              })
+            }}
+          />
+        </label>
+        <label>
+          定期代（円）
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={passPriceInput}
+            onChange={(e) => {
+              const filtered = e.target.value.replace(/[^0-9]/g, '')
+              setPassPriceInput(filtered)
+            }}
+            onBlur={() => {
+              updateProfile({
+                passPrice: passPriceInput === '' ? 0 : Number(passPriceInput),
+              })
+            }}
+          />
+        </label>
+        <label>
+          定期種別
+          <select
+            value={activeProfile.periodType}
+            onChange={(e) =>
+              updateProfile({
+                periodType: Number(e.target.value) as PeriodType,
+              })
+            }
+          >
+            <option value={1}>1ヶ月</option>
+            <option value={3}>3ヶ月</option>
+            <option value={6}>6ヶ月</option>
+          </select>
+        </label>
+        <label>
+          開始日
+          <input
+            type="date"
+            value={activeProfile.startDate}
+            onChange={(e) =>
+              updateProfile({ startDate: e.target.value })
+            }
+          />
+        </label>
+      </div>
+    </>
+  )
+
   return (
     <div className="container">
       <header>
@@ -341,123 +471,54 @@ export default function App() {
         </p>
       </header>
 
-      <section className="settings">
+      {/* Desktop settings */}
+      <section className="settings desktop-only">
         <h2>設定</h2>
+        {settingsForm}
+      </section>
 
-        <div className="profile-bar">
-          {renamingId === activeId ? (
-            <div className="profile-rename">
-              <input
-                type="text"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={confirmRename}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmRename()
-                  if (e.key === 'Escape') setRenamingId(null)
-                }}
-                autoFocus
-              />
+      {/* Mobile summary */}
+      <div className="settings-summary sp-only">
+        <div className="summary-row">
+          <span className="summary-profile">{activeProfile.name}</span>
+          <span className="summary-detail">
+            {formatCurrency(activeProfile.oneWayFare)}円×2 / {activeProfile.periodType}ヶ月 / {format(start, 'M/d')}〜{format(end, 'M/d')}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="summary-edit"
+          onClick={() => setIsSettingsOpen(true)}
+        >
+          設定を編集
+        </button>
+      </div>
+
+      {/* Mobile modal */}
+      {isSettingsOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsSettingsOpen(false)}
+        >
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2>設定</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setIsSettingsOpen(false)}
+                aria-label="閉じる"
+              >
+                ✕
+              </button>
             </div>
-          ) : (
-            <select
-              className="profile-select"
-              value={activeId}
-              onChange={(e) => switchProfile(e.target.value)}
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="profile-actions">
-            <button
-              type="button"
-              onClick={() => startRename(activeId, activeProfile.name)}
-            >
-              名前変更
-            </button>
-            <button type="button" onClick={addProfile}>
-              追加
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => deleteProfile(activeId)}
-              disabled={profiles.length <= 1}
-            >
-              削除
-            </button>
+            {settingsForm}
           </div>
         </div>
-
-        <div className="form-grid">
-          <label>
-            片道運賃（円）
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={oneWayFareInput}
-              onChange={(e) => {
-                const filtered = e.target.value.replace(/[^0-9]/g, '')
-                setOneWayFareInput(filtered)
-              }}
-              onBlur={() => {
-                updateProfile({
-                  oneWayFare:
-                    oneWayFareInput === '' ? 0 : Number(oneWayFareInput),
-                })
-              }}
-            />
-          </label>
-          <label>
-            定期代（円）
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={passPriceInput}
-              onChange={(e) => {
-                const filtered = e.target.value.replace(/[^0-9]/g, '')
-                setPassPriceInput(filtered)
-              }}
-              onBlur={() => {
-                updateProfile({
-                  passPrice: passPriceInput === '' ? 0 : Number(passPriceInput),
-                })
-              }}
-            />
-          </label>
-          <label>
-            定期種別
-            <select
-              value={activeProfile.periodType}
-              onChange={(e) =>
-                updateProfile({
-                  periodType: Number(e.target.value) as PeriodType,
-                })
-              }
-            >
-              <option value={1}>1ヶ月</option>
-              <option value={3}>3ヶ月</option>
-              <option value={6}>6ヶ月</option>
-            </select>
-          </label>
-          <label>
-            開始日
-            <input
-              type="date"
-              value={activeProfile.startDate}
-              onChange={(e) =>
-                updateProfile({ startDate: e.target.value })
-              }
-            />
-          </label>
-        </div>
-      </section>
+      )}
 
       <section className="result">
         <div className={`verdict ${shouldBuy ? 'buy' : 'skip'}`}>
