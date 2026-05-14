@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import {
   format,
   addMonths,
@@ -18,50 +18,42 @@ import './App.css'
 
 type PeriodType = 1 | 3 | 6
 
-interface Settings {
+interface Profile {
+  id: string
+  name: string
   oneWayFare: number
   passPrice: number
   periodType: PeriodType
   startDate: string
 }
 
-const STORAGE_SETTINGS = 'teiki-checker-settings'
-const STORAGE_ATTENDANCE = 'teiki-checker-attendance'
+const STORAGE_PROFILES = 'teiki-checker-profiles'
+const STORAGE_ACTIVE_PROFILE = 'teiki-checker-active-profile-id'
+const STORAGE_ATTENDANCE_PREFIX = 'teiki-checker-attendance-'
+const LEGACY_SETTINGS = 'teiki-checker-settings'
+const LEGACY_ATTENDANCE = 'teiki-checker-attendance'
 
-function loadSettings(): Settings {
-  const raw = localStorage.getItem(STORAGE_SETTINGS)
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        'oneWayFare' in parsed &&
-        'passPrice' in parsed &&
-        'periodType' in parsed &&
-        'startDate' in parsed
-      ) {
-        return parsed as Settings
-      }
-    } catch {
-      // ignore
-    }
-  }
-  const today = new Date()
-  return {
-    oneWayFare: 300,
-    passPrice: 12000,
-    periodType: 1,
-    startDate: format(today, 'yyyy-MM-dd'),
-  }
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
-function saveSettings(s: Settings) {
-  localStorage.setItem(STORAGE_SETTINGS, JSON.stringify(s))
+function saveProfiles(profiles: Profile[]) {
+  localStorage.setItem(STORAGE_PROFILES, JSON.stringify(profiles))
 }
 
-function loadAttendance(): Set<string> {
-  const raw = localStorage.getItem(STORAGE_ATTENDANCE)
+function saveActiveProfileId(id: string) {
+  localStorage.setItem(STORAGE_ACTIVE_PROFILE, id)
+}
+
+function saveAttendance(profileId: string, dates: Set<string>) {
+  localStorage.setItem(
+    STORAGE_ATTENDANCE_PREFIX + profileId,
+    JSON.stringify([...dates])
+  )
+}
+
+function loadAttendance(profileId: string): Set<string> {
+  const raw = localStorage.getItem(STORAGE_ATTENDANCE_PREFIX + profileId)
   if (raw) {
     try {
       const arr = JSON.parse(raw) as unknown
@@ -75,8 +67,94 @@ function loadAttendance(): Set<string> {
   return new Set()
 }
 
-function saveAttendance(dates: Set<string>) {
-  localStorage.setItem(STORAGE_ATTENDANCE, JSON.stringify([...dates]))
+function migrateLegacyData(): { profiles: Profile[]; activeId: string } {
+  const legacyRaw = localStorage.getItem(LEGACY_SETTINGS)
+  let defaultProfile: Profile
+
+  if (legacyRaw) {
+    try {
+      const parsed = JSON.parse(legacyRaw) as unknown
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        'oneWayFare' in parsed &&
+        'passPrice' in parsed &&
+        'periodType' in parsed &&
+        'startDate' in parsed
+      ) {
+        const s = parsed as Omit<Profile, 'id' | 'name'>
+        defaultProfile = {
+          id: generateId(),
+          name: '設定1',
+          oneWayFare: s.oneWayFare,
+          passPrice: s.passPrice,
+          periodType: s.periodType as PeriodType,
+          startDate: s.startDate,
+        }
+        // Migrate legacy attendance
+        const legacyAttRaw = localStorage.getItem(LEGACY_ATTENDANCE)
+        if (legacyAttRaw) {
+          try {
+            const arr = JSON.parse(legacyAttRaw) as unknown
+            if (Array.isArray(arr)) {
+              const attendance = new Set(
+                arr.filter((d): d is string => typeof d === 'string')
+              )
+              saveAttendance(defaultProfile.id, attendance)
+            }
+          } catch {
+            // ignore
+          }
+        }
+        // Clean up legacy keys
+        localStorage.removeItem(LEGACY_SETTINGS)
+        localStorage.removeItem(LEGACY_ATTENDANCE)
+      } else {
+        throw new Error('Invalid legacy format')
+      }
+    } catch {
+      defaultProfile = createDefaultProfile()
+    }
+  } else {
+    defaultProfile = createDefaultProfile()
+  }
+
+  const profiles = [defaultProfile]
+  saveProfiles(profiles)
+  saveActiveProfileId(defaultProfile.id)
+  return { profiles, activeId: defaultProfile.id }
+}
+
+function createDefaultProfile(): Profile {
+  const today = new Date()
+  return {
+    id: generateId(),
+    name: '設定1',
+    oneWayFare: 300,
+    passPrice: 12000,
+    periodType: 1,
+    startDate: format(today, 'yyyy-MM-dd'),
+  }
+}
+
+function loadProfiles(): { profiles: Profile[]; activeId: string } {
+  const profilesRaw = localStorage.getItem(STORAGE_PROFILES)
+  const activeIdRaw = localStorage.getItem(STORAGE_ACTIVE_PROFILE)
+
+  if (!profilesRaw) {
+    return migrateLegacyData()
+  }
+
+  try {
+    const profiles = JSON.parse(profilesRaw) as unknown
+    if (!Array.isArray(profiles) || profiles.length === 0) {
+      return migrateLegacyData()
+    }
+    const activeId = activeIdRaw || (profiles[0] as Profile).id
+    return { profiles: profiles as Profile[], activeId }
+  } catch {
+    return migrateLegacyData()
+  }
 }
 
 function getEndDate(start: Date, period: PeriodType): Date {
@@ -88,15 +166,35 @@ function formatCurrency(n: number): string {
 }
 
 export default function App() {
-  const [settings, setSettings] = useState<Settings>(loadSettings)
-  const [attendance, setAttendance] = useState<Set<string>>(loadAttendance)
-  const [oneWayFareInput, setOneWayFareInput] = useState(String(settings.oneWayFare))
-  const [passPriceInput, setPassPriceInput] = useState(String(settings.passPrice))
+  const { profiles: initialProfiles, activeId: initialActiveId } =
+    loadProfiles()
+  const [profiles, setProfiles] = useState<Profile[]>(initialProfiles)
+  const [activeId, setActiveId] = useState<string>(initialActiveId)
 
-  const start = useMemo(() => parseISO(settings.startDate), [settings.startDate])
+  const activeProfile = useMemo(
+    () => profiles.find((p) => p.id === activeId) || profiles[0],
+    [profiles, activeId]
+  )
+
+  const [attendance, setAttendance] = useState<Set<string>>(() =>
+    loadAttendance(activeProfile.id)
+  )
+  const [oneWayFareInput, setOneWayFareInput] = useState(
+    String(activeProfile.oneWayFare)
+  )
+  const [passPriceInput, setPassPriceInput] = useState(
+    String(activeProfile.passPrice)
+  )
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
+  const start = useMemo(
+    () => parseISO(activeProfile.startDate),
+    [activeProfile.startDate]
+  )
   const end = useMemo(
-    () => getEndDate(start, settings.periodType),
-    [start, settings.periodType]
+    () => getEndDate(start, activeProfile.periodType),
+    [start, activeProfile.periodType]
   )
 
   const months = useMemo(() => {
@@ -109,24 +207,40 @@ export default function App() {
     return ms
   }, [start, end])
 
-  const totalFare = settings.oneWayFare * 2 * attendance.size
-  const shouldBuy = settings.passPrice <= totalFare
-  const diff = Math.abs(settings.passPrice - totalFare)
+  const totalFare = activeProfile.oneWayFare * 2 * attendance.size
+  const shouldBuy = activeProfile.passPrice <= totalFare
+  const diff = Math.abs(activeProfile.passPrice - totalFare)
   const breakEvenDays = Math.ceil(
-    settings.passPrice / (settings.oneWayFare * 2)
+    activeProfile.passPrice / (activeProfile.oneWayFare * 2)
   )
 
-  function updateSettings(next: Partial<Settings>) {
-    setSettings((prev) => {
-      const updated = { ...prev, ...next }
-      saveSettings(updated)
+  const switchProfile = useCallback(
+    (id: string) => {
+      setActiveId(id)
+      saveActiveProfileId(id)
+      const profile = profiles.find((p) => p.id === id)
+      if (profile) {
+        setAttendance(loadAttendance(id))
+        setOneWayFareInput(String(profile.oneWayFare))
+        setPassPriceInput(String(profile.passPrice))
+      }
+    },
+    [profiles]
+  )
+
+  function updateProfile(next: Partial<Profile>) {
+    setProfiles((prev) => {
+      const updated = prev.map((p) =>
+        p.id === activeId ? { ...p, ...next } : p
+      )
+      saveProfiles(updated)
       return updated
     })
 
     // Filter out attendance dates that fall outside the new range
-    const nextSettings = { ...settings, ...next }
-    const newStart = parseISO(nextSettings.startDate)
-    const newEnd = getEndDate(newStart, nextSettings.periodType)
+    const nextProfile = { ...activeProfile, ...next }
+    const newStart = parseISO(nextProfile.startDate)
+    const newEnd = getEndDate(newStart, nextProfile.periodType)
     setAttendance((prev) => {
       const filtered = new Set(
         [...prev].filter((dateStr) => {
@@ -135,10 +249,56 @@ export default function App() {
         })
       )
       if (filtered.size !== prev.size) {
-        saveAttendance(filtered)
+        saveAttendance(activeId, filtered)
       }
       return filtered
     })
+  }
+
+  function addProfile() {
+    const newProfile: Profile = {
+      ...activeProfile,
+      id: generateId(),
+      name: `設定${profiles.length + 1}`,
+    }
+    const updated = [...profiles, newProfile]
+    setProfiles(updated)
+    saveProfiles(updated)
+    switchProfile(newProfile.id)
+    setAttendance(new Set())
+    saveAttendance(newProfile.id, new Set())
+  }
+
+  function deleteProfile(id: string) {
+    if (profiles.length <= 1) return
+    const updated = profiles.filter((p) => p.id !== id)
+    setProfiles(updated)
+    saveProfiles(updated)
+    localStorage.removeItem(STORAGE_ATTENDANCE_PREFIX + id)
+    if (activeId === id) {
+      const nextId = updated[0].id
+      switchProfile(nextId)
+    }
+  }
+
+  function startRename(id: string, currentName: string) {
+    setRenamingId(id)
+    setRenameValue(currentName)
+  }
+
+  function confirmRename() {
+    if (!renamingId || !renameValue.trim()) {
+      setRenamingId(null)
+      return
+    }
+    setProfiles((prev) => {
+      const updated = prev.map((p) =>
+        p.id === renamingId ? { ...p, name: renameValue.trim() } : p
+      )
+      saveProfiles(updated)
+      return updated
+    })
+    setRenamingId(null)
   }
 
   function toggleDate(dateStr: string) {
@@ -149,7 +309,7 @@ export default function App() {
       } else {
         next.add(dateStr)
       }
-      saveAttendance(next)
+      saveAttendance(activeId, next)
       return next
     })
   }
@@ -164,12 +324,12 @@ export default function App() {
       }
     }
     setAttendance(next)
-    saveAttendance(next)
+    saveAttendance(activeId, next)
   }
 
   function clearAll() {
     setAttendance(new Set())
-    saveAttendance(new Set())
+    saveAttendance(activeId, new Set())
   }
 
   return (
@@ -183,6 +343,56 @@ export default function App() {
 
       <section className="settings">
         <h2>設定</h2>
+
+        <div className="profile-bar">
+          {renamingId === activeId ? (
+            <div className="profile-rename">
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={confirmRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmRename()
+                  if (e.key === 'Escape') setRenamingId(null)
+                }}
+                autoFocus
+              />
+            </div>
+          ) : (
+            <select
+              className="profile-select"
+              value={activeId}
+              onChange={(e) => switchProfile(e.target.value)}
+            >
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="profile-actions">
+            <button
+              type="button"
+              onClick={() => startRename(activeId, activeProfile.name)}
+            >
+              名前変更
+            </button>
+            <button type="button" onClick={addProfile}>
+              追加
+            </button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => deleteProfile(activeId)}
+              disabled={profiles.length <= 1}
+            >
+              削除
+            </button>
+          </div>
+        </div>
+
         <div className="form-grid">
           <label>
             片道運賃（円）
@@ -196,7 +406,10 @@ export default function App() {
                 setOneWayFareInput(filtered)
               }}
               onBlur={() => {
-                updateSettings({ oneWayFare: oneWayFareInput === '' ? 0 : Number(oneWayFareInput) })
+                updateProfile({
+                  oneWayFare:
+                    oneWayFareInput === '' ? 0 : Number(oneWayFareInput),
+                })
               }}
             />
           </label>
@@ -212,16 +425,18 @@ export default function App() {
                 setPassPriceInput(filtered)
               }}
               onBlur={() => {
-                updateSettings({ passPrice: passPriceInput === '' ? 0 : Number(passPriceInput) })
+                updateProfile({
+                  passPrice: passPriceInput === '' ? 0 : Number(passPriceInput),
+                })
               }}
             />
           </label>
           <label>
             定期種別
             <select
-              value={settings.periodType}
+              value={activeProfile.periodType}
               onChange={(e) =>
-                updateSettings({
+                updateProfile({
                   periodType: Number(e.target.value) as PeriodType,
                 })
               }
@@ -235,9 +450,9 @@ export default function App() {
             開始日
             <input
               type="date"
-              value={settings.startDate}
+              value={activeProfile.startDate}
               onChange={(e) =>
-                updateSettings({ startDate: e.target.value })
+                updateProfile({ startDate: e.target.value })
               }
             />
           </label>
@@ -251,7 +466,7 @@ export default function App() {
         <div className="details">
           <div className="row">
             <span>定期代</span>
-            <strong>{formatCurrency(settings.passPrice)}円</strong>
+            <strong>{formatCurrency(activeProfile.passPrice)}円</strong>
           </div>
           <div className="row">
             <span>チャージ払い</span>
